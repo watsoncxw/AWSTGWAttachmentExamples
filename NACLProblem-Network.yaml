@@ -1,0 +1,425 @@
+Description: TGW Example
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  ProdARange: 
+    Type: String
+    Description: The CIDR for Prod VPC A
+  ProdASubnetARange: 
+    Type: String
+    Description: The Subnet A for Prod VPC A
+  ProdASubnetBRange: 
+    Type: String
+    Description: The Subnet B for Prod VPC A
+  ProdBRange: 
+    Type: String
+    Description: The CIDR for Prod VPC B
+  ProdBSubnetARange: 
+    Type: String
+    Description: The Subnet A for Prod VPC B
+  ProdBSubnetBRange: 
+    Type: String
+    Description: The Subnet B for Prod VPC B
+
+Resources:
+  TGW:
+    Type: AWS::EC2::TransitGateway
+    Properties: 
+      Description: TGW Used for TGW Attachment Examples
+      Tags: 
+        - Key: Name
+          Value: TGW-NACLProblem
+
+  TGWRouteTable:
+    Type: AWS::EC2::TransitGatewayRouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: TGWRouteTable
+      TransitGatewayId: !Ref TGW
+
+# VPC A
+  ProdAVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref ProdARange
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Prod-A-VPC
+
+  ProdASubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: ap-southeast-2a
+      CidrBlock: !Ref ProdASubnetARange
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: Prod-A-SubnetA
+      VpcId: !Ref ProdAVPC
+
+  ProdASubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: ap-southeast-2b
+      CidrBlock: !Ref ProdASubnetBRange
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: Prod-A-SubnetB
+      VpcId: !Ref ProdAVPC
+
+  ProdANACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: ProdA
+      VpcId: !Ref ProdAVPC
+
+  ProdANACLSubA:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties: 
+      NetworkAclId: !Ref ProdANACL
+      SubnetId: !Ref ProdASubnetA
+
+  ProdANACLSubB:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties: 
+      NetworkAclId: !Ref ProdANACL
+      SubnetId: !Ref ProdASubnetB
+
+  ProdANACLOutboundRDP:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdBRange
+      Egress: true
+      NetworkAclId: !Ref ProdANACL
+      PortRange:
+        From: 3389
+        To: 3389
+      Protocol: 6
+      RuleAction: allow
+      RuleNumber: 101
+
+  ProdANACLOutboundRDPReturn:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdBRange
+      Egress: false
+      NetworkAclId: !Ref ProdANACL
+      PortRange:
+        From: 49152 
+        To: 65535
+      Protocol: 6
+      RuleAction: allow
+      RuleNumber: 101
+
+  ProdANACLOutboundIntraVPC:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdARange
+      Egress: true
+      NetworkAclId: !Ref ProdANACL
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 110
+
+  ProdANACLOutboundIntraVPCReturn:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdARange
+      Egress: false
+      NetworkAclId: !Ref ProdANACL
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 110
+
+  ProdATGWAttachment:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties: 
+      SubnetIds: 
+        - !Ref ProdASubnetA
+        - !Ref ProdASubnetB
+      Tags: 
+        - Key: Name
+          Value: ProdAAttach
+      TransitGatewayId: !Ref TGW
+      VpcId: !Ref ProdAVPC
+
+  ProdATGWAssociation:
+    Type: AWS::EC2::TransitGatewayRouteTableAssociation
+    Properties: 
+      TransitGatewayAttachmentId: !Ref ProdATGWAttachment
+      TransitGatewayRouteTableId: !Ref TGWRouteTable
+
+  ProdATGWPropogation:
+    Type: AWS::EC2::TransitGatewayRouteTablePropagation
+    Properties: 
+      TransitGatewayAttachmentId: !Ref ProdATGWAttachment
+      TransitGatewayRouteTableId: !Ref TGWRouteTable
+
+  ProdARouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: ProdARouteTable
+      VpcId: !Ref ProdAVPC
+
+  ProdADefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref ProdARouteTable
+      TransitGatewayId: !Ref TGW
+
+  ProdASubARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ProdARouteTable
+      SubnetId: !Ref ProdASubnetA
+
+  ProdASubBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ProdARouteTable
+      SubnetId: !Ref ProdASubnetB
+
+# End Points
+  ProdASecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Prod A End Point Security Group
+      GroupName: ProdAEndPoint-SG
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: !Ref ProdARange
+      Tags: 
+        - Key: Name
+          Value: ProdASecGroup
+      VpcId: !ImportValue ProdAVPC
+
+  SSMEndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdASecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ssm
+      SubnetIds:
+        - !Ref ProdASubnetA
+        - !Ref ProdASubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdAVPC
+
+  SSMMessagesEndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdASecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ssmmessages
+      SubnetIds:
+        - !Ref ProdASubnetA
+        - !Ref ProdASubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdAVPC
+
+  EC2EndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdASecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ec2messages
+      SubnetIds:
+        - !Ref ProdASubnetA
+        - !Ref ProdASubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdAVPC
+
+  S3EndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds: 
+        - !Ref ProdARouteTable
+      ServiceName: com.amazonaws.ap-southeast-2.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref ProdAVPC
+
+
+################################################################################
+# VPC B
+  ProdBVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref ProdBRange
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Prod-B-VPC
+
+  ProdBSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: ap-southeast-2a
+      CidrBlock: !Ref ProdBSubnetARange
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: Prod-B-SubnetA
+      VpcId: !Ref ProdBVPC
+
+  ProdBSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: ap-southeast-2b
+      CidrBlock: !Ref ProdBSubnetBRange
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: Prod-B-SubnetB
+      VpcId: !Ref ProdBVPC
+
+  ProdBNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: ProdB
+      VpcId: !Ref ProdBVPC
+
+  ProdBNACLSubA:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties: 
+      NetworkAclId: !Ref ProdBNACL
+      SubnetId: !Ref ProdBSubnetA
+
+  ProdBNACLSubB:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties: 
+      NetworkAclId: !Ref ProdBNACL
+      SubnetId: !Ref ProdBSubnetB
+
+  ProdBNACLInboundRDP:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdARange
+      Egress: true
+      NetworkAclId: !Ref ProdBNACL
+      PortRange:
+        From: 49152
+        To: 65535
+      Protocol: 6
+      RuleAction: allow
+      RuleNumber: 101
+
+  ProdBNACLOutboundRDPReturn:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdARange
+      Egress: false
+      NetworkAclId: !Ref ProdBNACL
+      PortRange:
+        From: 3389
+        To: 3389
+      Protocol: 6
+      RuleAction: allow
+      RuleNumber: 101
+
+  ProdBNACLOutboundIntraVPC:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdBRange
+      Egress: true
+      NetworkAclId: !Ref ProdBNACL
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 110
+
+  ProdBNACLOutboundIntraVPCReturn:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties: 
+      CidrBlock: !Ref ProdBRange
+      Egress: false
+      NetworkAclId: !Ref ProdBNACL
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 110
+
+  ProdBTGWAttachment:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties: 
+      SubnetIds: 
+        - !Ref ProdBSubnetA
+        - !Ref ProdBSubnetB
+      Tags: 
+        - Key: Name
+          Value: ProdBAttach
+      TransitGatewayId: !Ref TGW
+      VpcId: !Ref ProdBVPC
+
+  ProdBTGWAssociation:
+    Type: AWS::EC2::TransitGatewayRouteTableAssociation
+    Properties: 
+      TransitGatewayAttachmentId: !Ref ProdBTGWAttachment
+      TransitGatewayRouteTableId: !Ref TGWRouteTable
+
+  ProdBTGWPropogation:
+    Type: AWS::EC2::TransitGatewayRouteTablePropagation
+    Properties: 
+      TransitGatewayAttachmentId: !Ref ProdBTGWAttachment
+      TransitGatewayRouteTableId: !Ref TGWRouteTable
+
+  ProdBRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: ProdBRouteTable
+      VpcId: !Ref ProdBVPC
+
+  ProdBDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref ProdBRouteTable
+      TransitGatewayId: !Ref TGW
+
+  ProdBSubARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ProdBRouteTable
+      SubnetId: !Ref ProdBSubnetA
+
+  ProdBSubBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ProdBRouteTable
+      SubnetId: !Ref ProdBSubnetB
+
+Outputs:
+  ProdASubnetA:
+    Value: !Ref ProdASubnetA
+    Export:
+      Name: "ProdASubnetA"
+  ProdBSubnetA:
+    Value: !Ref ProdBSubnetA
+    Export:
+      Name: "ProdBSubnetA"
+  ProdAVPC:
+    Value: !Ref ProdAVPC
+    Export:
+      Name: "ProdAVPC"
+  ProdBVPC:
+    Value: !Ref ProdBVPC
+    Export:
+      Name: "ProdBVPC"

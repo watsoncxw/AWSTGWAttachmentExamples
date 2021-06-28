@@ -1,0 +1,95 @@
+Description: TGW Example
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  InstanceType: 
+    Type: String
+    Description: InstanceType for EC2 Instances
+  AMI:
+    Type: String
+    Description: The AMI for the instance
+
+Resources:
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action: 
+          - sts:AssumeRole
+      Description: The EC2 Role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      RoleName: ec2-role
+
+  EC2Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: EC2Profile
+      Roles: 
+        - !Ref EC2Role
+
+  ProdASecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Prod A Security Group
+      GroupName: ProdA-SG
+      SecurityGroupIngress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: ProdASecGroup
+      VpcId: !ImportValue ProdAVPC
+
+  ProdAEC2:
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref AMI
+      IamInstanceProfile: !Ref EC2Profile
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds: 
+        - !Ref ProdASecGroup
+      SubnetId: !ImportValue ProdASubnetA
+      Tags: 
+        - Key: Name
+          Value: ProdAEC2
+
+# Prod B EC2 Instance
+  ProdBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Prod B Security Group
+      GroupName: ProdB-SG
+      SecurityGroupIngress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: ProdBSecGroup
+      VpcId: !ImportValue ProdBVPC
+
+  ProdBEC2:
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref AMI
+      IamInstanceProfile: !Ref EC2Profile
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds: 
+        - !Ref ProdBSecGroup
+      SubnetId: !ImportValue ProdBSubnetA
+      Tags: 
+        - Key: Name
+          Value: ProdBEC2
