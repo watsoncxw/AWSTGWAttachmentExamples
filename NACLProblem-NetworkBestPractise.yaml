@@ -34,6 +34,40 @@ Parameters:
     Description: The Subnet B for Prod VPC B TGW
 
 Resources:
+
+  FlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - vpc-flow-logs.amazonaws.com
+          Action: 
+          - sts:AssumeRole
+      Description: The Flow Logs Role
+      RoleName: flowlogs-role
+
+  FlowLogsInline:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeLogStreams"
+            Resource: "*"
+      PolicyName: AllowFlowLogs
+      Roles: 
+      - !Ref FlowLogsRole
+
   TGW:
     Type: AWS::EC2::TransitGateway
     Properties: 
@@ -61,6 +95,15 @@ Resources:
       Tags:
         - Key: Name
           Value: Prod-A-VPC
+
+  ProdAFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      LogGroupName: FlowLogsGroup
+      ResourceId: !Ref ProdAVPC
+      ResourceType: VPC
+      TrafficType: ALL
 
   ProdASubnetATGW:
     Type: AWS::EC2::Subnet
@@ -152,32 +195,12 @@ Resources:
       RuleAction: allow
       RuleNumber: 101
 
-  ProdANACLOutboundIntraVPC:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties: 
-      CidrBlock: !Ref ProdARange
-      Egress: true
-      NetworkAclId: !Ref ProdANACL
-      Protocol: -1
-      RuleAction: allow
-      RuleNumber: 110
-
-  ProdANACLOutboundIntraVPCReturn:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties: 
-      CidrBlock: !Ref ProdARange
-      Egress: false
-      NetworkAclId: !Ref ProdANACL
-      Protocol: -1
-      RuleAction: allow
-      RuleNumber: 110
-
   ProdATGWAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Properties: 
       SubnetIds: 
-        - !Ref ProdASubnetA
-        - !Ref ProdASubnetB
+        - !Ref ProdASubnetATGW
+        - !Ref ProdASubnetBTGW
       Tags: 
         - Key: Name
           Value: ProdAAttach
@@ -205,6 +228,8 @@ Resources:
       VpcId: !Ref ProdAVPC
 
   ProdADefaultRoute:
+    DependsOn: 
+      - ProdATGWAttachment
     Type: AWS::EC2::Route
     Properties:
       DestinationCidrBlock: 0.0.0.0/0
@@ -237,9 +262,9 @@ Resources:
       Tags: 
         - Key: Name
           Value: ProdASecGroup
-      VpcId: !ImportValue ProdAVPC
+      VpcId: !Ref ProdAVPC
 
-  SSMEndPoint:
+  ProdASSMEndPoint:
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -252,7 +277,7 @@ Resources:
       VpcEndpointType: Interface
       VpcId: !Ref ProdAVPC
 
-  SSMMessagesEndPoint:
+  ProdASSMMessagesEndPoint:
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -265,7 +290,7 @@ Resources:
       VpcEndpointType: Interface
       VpcId: !Ref ProdAVPC
 
-  EC2EndPoint:
+  ProdAEC2EndPoint:
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -278,7 +303,7 @@ Resources:
       VpcEndpointType: Interface
       VpcId: !Ref ProdAVPC
 
-  S3EndPoint:
+  ProdAS3EndPoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
       RouteTableIds: 
@@ -300,6 +325,15 @@ Resources:
       Tags:
         - Key: Name
           Value: Prod-B-VPC
+
+  ProdBFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      LogGroupName: FlowLogsGroup
+      ResourceId: !Ref ProdBVPC
+      ResourceType: VPC
+      TrafficType: ALL
 
   ProdBSubnetATGW:
     Type: AWS::EC2::Subnet
@@ -444,6 +478,8 @@ Resources:
       VpcId: !Ref ProdBVPC
 
   ProdBDefaultRoute:
+    DependsOn: 
+      - ProdBTGWAttachment
     Type: AWS::EC2::Route
     Properties:
       DestinationCidrBlock: 0.0.0.0/0
@@ -462,20 +498,95 @@ Resources:
       RouteTableId: !Ref ProdBRouteTable
       SubnetId: !Ref ProdBSubnetB
 
+# End Points
+  ProdBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Prod B End Point Security Group
+      GroupName: ProdBEndPoint-SG
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: !Ref ProdBRange
+      Tags: 
+        - Key: Name
+          Value: ProdBSecGroup
+      VpcId: !Ref ProdBVPC
+
+  ProdBSMEndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdBSecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ssm
+      SubnetIds:
+        - !Ref ProdBSubnetA
+        - !Ref ProdBSubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdBVPC
+
+  ProdBSSMMessagesEndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdBSecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ssmmessages
+      SubnetIds:
+        - !Ref ProdBSubnetA
+        - !Ref ProdBSubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdBVPC
+
+  ProdBEC2EndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref ProdBSecGroup
+      ServiceName: com.amazonaws.ap-southeast-2.ec2messages
+      SubnetIds:
+        - !Ref ProdBSubnetA
+        - !Ref ProdBSubnetB
+      VpcEndpointType: Interface
+      VpcId: !Ref ProdBVPC
+
+  ProdBS3EndPoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds: 
+        - !Ref ProdBRouteTable
+      ServiceName: com.amazonaws.ap-southeast-2.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref ProdBVPC
+
+
+# Outputs
+##############################################################
 Outputs:
-  ProdASubnetA:
+  KeyProdASubnetA:
     Value: !Ref ProdASubnetA
     Export:
       Name: "ProdASubnetA"
-  ProdBSubnetA:
+  KeyProdASubnetB:
+    Value: !Ref ProdASubnetB
+    Export:
+      Name: "ProdASubnetB"
+  KeyProdBSubnetA:
     Value: !Ref ProdBSubnetA
     Export:
       Name: "ProdBSubnetA"
-  ProdAVPC:
+  KeyProdBSubnetB:
+    Value: !Ref ProdBSubnetB
+    Export:
+      Name: "ProdBSubnetB"
+  KeyProdAVPC:
     Value: !Ref ProdAVPC
     Export:
       Name: "ProdAVPC"
-  ProdBVPC:
+  KeyProdBVPC:
     Value: !Ref ProdBVPC
     Export:
       Name: "ProdBVPC"

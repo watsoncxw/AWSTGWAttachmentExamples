@@ -5,6 +5,12 @@ Parameters:
   InstanceType: 
     Type: String
     Description: InstanceType for EC2 Instances
+  EC2AIP:
+    Type: String
+    Description: Private IP of EC2 in Prod A
+  EC2BIP:
+    Type: String
+    Description: Private IP of EC2 in Prod B
   AMI:
     Type: String
     Description: The AMI for the instance
@@ -57,6 +63,7 @@ Resources:
       ImageId: !Ref AMI
       IamInstanceProfile: !Ref EC2Profile
       InstanceType: !Ref InstanceType
+      PrivateIpAddress: !Ref EC2AIP
       SecurityGroupIds: 
         - !Ref ProdASecGroup
       SubnetId: !ImportValue ProdASubnetA
@@ -87,9 +94,23 @@ Resources:
       ImageId: !Ref AMI
       IamInstanceProfile: !Ref EC2Profile
       InstanceType: !Ref InstanceType
+      PrivateIpAddress: !Ref EC2BIP
       SecurityGroupIds: 
         - !Ref ProdBSecGroup
-      SubnetId: !ImportValue ProdBSubnetA
+      SubnetId: !ImportValue ProdBSubnetB
       Tags: 
         - Key: Name
           Value: ProdBEC2
+
+#  ProdBEC2Second:
+#    Type: AWS::EC2::Instance
+#    Properties: 
+#      ImageId: !Ref AMI
+#      IamInstanceProfile: !Ref EC2Profile
+#      InstanceType: !Ref InstanceType
+#      SecurityGroupIds: 
+#        - !Ref ProdBSecGroup
+#      SubnetId: !ImportValue ProdBSubnetA
+#      Tags: 
+#        - Key: Name
+#          Value: ProdBEC2Second
